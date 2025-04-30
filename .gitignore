@@ -1,0 +1,6 @@
+# Exclude Puppeteer's Chromium binary
+node_modules/puppeteer-core/.local-chromium/
+
+# Default Node.js exclusions
+node_modules/
+.env
