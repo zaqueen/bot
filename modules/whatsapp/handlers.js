@@ -258,6 +258,12 @@ async function handleMessage(sock, msg) {
     await handleTicketCheck(sock, msg, messageBody);
     return;
   }
+    // Jika pesan tidak dikenali
+    await msg.reply(
+      '⚠️ *Pesan tidak dikenali*\n\n' +
+      'Silakan ketik */help* untuk informasi lebih lanjut.'
+    );
+
 }
 
 async function handleCheckCommand(sock, msg, senderNumber, messageBody) {
@@ -379,7 +385,7 @@ async function notifySekdep(ticketNumber, goodsName, quantity, reason, link, req
     `Link: ${link}\n` +
     `Alasan: ${reason}\n\n` +
     `Permintaan ini memerlukan persetujuan SekretarisDepartemen terlebih dahulu.\n\n` +
-    `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing` +
+    `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing\n\n` +
     `Balas dengan:\n` +
     `*1 ${ticketNumber}* untuk menyetujui\n` +
     `*2 ${ticketNumber} [alasan]* untuk menolak\n\n` +
