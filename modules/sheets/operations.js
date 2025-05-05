@@ -227,8 +227,8 @@ async function processUpdatedRow(row) {
       reasonBendahara: row.get('reasonBendahara') || row._rawData[11]
     };
 
-    if (status === 'PENDING_PROCESS' && !row.kadepNotified) {
-      row.set('kadepNotified', 'YES');
+    if (status === 'PENDING_PROCESS' && !row.sekdepNotified) {
+      row.set('sekdepNotified', 'YES');
       await row.save();
     } 
     else if (status === 'REJECTED' && !row.rejectNotified) {
