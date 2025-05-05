@@ -16,9 +16,9 @@ async function addNewRequest(requestData) {
       link: requestData.link,
       reason: requestData.reason,
       status: requestData.status,
-      approvalKadep: requestData.approvalKadep || '',
+      approvalSekdep: requestData.approvalSekdep || '',
       statusBendahara: requestData.statusBendahara || '',
-      reasonKadep: requestData.reasonKadep || '',
+      reasonSekdep: requestData.reasonSekdep || '',
       reasonBendahara: requestData.reasonBendahara || '',
       lastUpdated: new Date().toISOString()
     };
@@ -66,9 +66,9 @@ async function getTicketData(ticketNumber) {
       link: ticketRow.get('link') || ticketRow._rawData[6],
       reason: ticketRow.get('reason') || ticketRow._rawData[7],
       status: ticketRow.get('status') || ticketRow._rawData[8],
-      approvalKadep: ticketRow.get('approvalKadep') || ticketRow._rawData[9],
+      approvalSekdep: ticketRow.get('approvalSekdep') || ticketRow._rawData[9],
       statusBendahara: ticketRow.get('statusBendahara') || ticketRow._rawData[10],
-      reasonKadep: ticketRow.get('reasonKadep') || ticketRow._rawData[11],
+      reasonSekdep: ticketRow.get('reasonSekdep') || ticketRow._rawData[11],
       reasonBendahara: ticketRow.get('reasonBendahara') || ticketRow._rawData[12],
       lastUpdated: ticketRow.get('lastUpdated') || ticketRow._rawData[13]
     };
@@ -120,7 +120,7 @@ async function updateTicketStatus(ticketNumber, updates) {
         quantity: ticketRow.get('quantity') || ticketRow._rawData[4],
         link: ticketRow.get('link') || ticketRow._rawData[5],
         reason: ticketRow.get('reason') || ticketRow._rawData[6],
-        reasonKadep: ticketRow.get('reasonKadep') || ticketRow._rawData[10],
+        reasonSekdep: ticketRow.get('reasonSekdep') || ticketRow._rawData[10],
         reasonBendahara: ticketRow.get('reasonBendahara') || ticketRow._rawData[11]
       });
     }
@@ -147,12 +147,12 @@ async function handleStatusChange(ticketNumber, updates, ticketData) {
     if (updates.status) {
       switch (updates.status) {
         case 'PENDING_PROCESS':
-          notificationType = 'KADEP_APPROVED';
+          notificationType = 'SEKDEP_APPROVED';
           break;
         
         case 'REJECTED':
-          notificationType = 'KADEP_REJECTED';
-          notificationData.reason = ticketData.reasonKadep;
+          notificationType = 'SEKDEP_REJECTED';
+          notificationData.reason = ticketData.reasonSekdep;
           break;
       }
     }
@@ -223,7 +223,7 @@ async function processUpdatedRow(row) {
       quantity: row.get('quantity') || row._rawData[4],
       link: row.get('link') || row._rawData[5],
       reason: row.get('reason') || row._rawData[6],
-      reasonKadep: row.get('reasonKadep') || row._rawData[10],
+      reasonSekdep: row.get('reasonSekdep') || row._rawData[10],
       reasonBendahara: row.get('reasonBendahara') || row._rawData[11]
     };
 
@@ -232,7 +232,7 @@ async function processUpdatedRow(row) {
       await row.save();
     } 
     else if (status === 'REJECTED' && !row.rejectNotified) {
-      notificationData.reason = row.get('reasonKadep') || row._rawData[10];
+      notificationData.reason = row.get('reasonSekdep') || row._rawData[10];
       row.set('rejectNotified', 'YES');
       await row.save();
     }

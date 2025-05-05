@@ -24,8 +24,8 @@ async function handleRequestMessage(data) {
     
     // Notify relevant parties
     if (data.status === 'PENDING_APPROVAL_1') {
-      // New request - notify Kadep
-      await notificationService.notifyKadep(data);
+      // New request - notify sekdep
+      await notificationService.notifySekdep(data);
     }
   } catch (error) {
     console.error('Error handling request message:', error);
@@ -37,12 +37,12 @@ async function handleNotificationMessage(data) {
   try {
     switch (data.type) {
       case 'APPROVAL_1_UPDATED':
-        // Kadep approval updated
+        // sekdep approval updated
         if (data.approved) {
-          // Kadep approved - notify Bendahara
+          // sekdep approved - notify Bendahara
           await notificationService.notifyBendahara(data);
         } else {
-          // Kadep rejected - notify requester
+          // sekdep rejected - notify requester
           await notificationService.notifyRequester(data);
         }
         break;

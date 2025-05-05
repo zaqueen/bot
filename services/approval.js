@@ -1,8 +1,8 @@
 const sheetsOperations = require('../modules/sheets/operations');
 const mqttClient = require('../modules/mqtt/client');
 
-// Process approval from Kadep
-async function processKadepApproval(ticketNumber, approved, reason = null) {
+// Process approval from sekdep
+async function processSekdepApproval(ticketNumber, approved, reason = null) {
   try {
     // Get current ticket data
     const ticketData = await sheetsOperations.getTicketData(ticketNumber);
@@ -17,22 +17,22 @@ async function processKadepApproval(ticketNumber, approved, reason = null) {
     
     // Check if ticket is in the correct state
     if (ticketData.status !== 'PENDING_APPROVAL_1') {
-      console.error(`Status tiket tidak valid untuk persetujuan Kadep: ${ticketData.status}`);
+      console.error(`Status tiket tidak valid untuk persetujuan sekdep: ${ticketData.status}`);
       return {
         success: false,
-        message: `Tiket ini tidak sedang menunggu persetujuan Kadep. Status saat ini: ${ticketData.status}`
+        message: `Tiket ini tidak sedang menunggu persetujuan sekdep. Status saat ini: ${ticketData.status}`
       };
     }
     
     // Prepare updates
     const updates = {
-      approvalKadep: approved ? 'APPROVED' : 'REJECTED',
+      approvalSekdep: approved ? 'APPROVED' : 'REJECTED',
       status: approved ? 'PENDING_APPROVAL_2' : 'REJECTED_1'
     };
     
     // Add reason if provided
     if (reason) {
-      updates.reasonKadep = reason;
+      updates.reasonSekdep = reason;
     }
     
     // Update ticket in Google Sheets
@@ -42,10 +42,10 @@ async function processKadepApproval(ticketNumber, approved, reason = null) {
     
     return {
       success: true,
-      message: `Tiket ${ticketNumber} telah ${approved ? 'disetujui' : 'ditolak'} oleh Kadep`
+      message: `Tiket ${ticketNumber} telah ${approved ? 'disetujui' : 'ditolak'} oleh sekdep`
     };
   } catch (error) {
-    console.error('Gagal memproses persetujuan Kadep:', error);
+    console.error('Gagal memproses persetujuan sekdep:', error);
     return {
       success: false,
       message: 'Terjadi kesalahan saat memproses persetujuan'
@@ -106,6 +106,6 @@ async function processBendaharaApproval(ticketNumber, approved, reason = null) {
 }
 
 module.exports = {
-  processKadepApproval,
+  processSekdepApproval,
   processBendaharaApproval
 };

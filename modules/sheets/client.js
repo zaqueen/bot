@@ -46,9 +46,9 @@ async function ensureRequiredSheets() {
           'senderNumber',
           'request',
           'status',
-          'approvalKadep',
+          'approvalSekdep',
           'statusBendahara',
-          'reasonKadep',
+          'reasonSekdep',
           'reasonBendahara',
           'lastUpdated'
         ]

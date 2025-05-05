@@ -91,15 +91,15 @@ async function handleMessage(sock, msg) {
       link: requestData.link,
       reason: requestData.reason,
       status: 'PENDING_APPROVAL',
-      approvalKadep: null,
+      approvalSekdep: null,
       statusBendahara: null,
-      reasonKadep: null,
+      reasonSekdep: null,
       reasonBendahara: null,
       lastUpdated: new Date().toISOString()
     });
 
-    // Kirim notifikasi ke Kadep
-    await notifyKadep(ticketNumber, requestData.goodsName, requestData.quantity, 
+    // Kirim notifikasi ke Sekdep
+    await notifySekdep(ticketNumber, requestData.goodsName, requestData.quantity, 
                      requestData.reason, requestData.link, senderNumber, requestData.senderName);
     await notifyBendahara(ticketNumber, requestData.goodsName, requestData.quantity, 
                      requestData.reason, requestData.link, senderNumber, requestData.senderName);
@@ -113,8 +113,8 @@ async function handleMessage(sock, msg) {
     return;
   }
 
-  // Handle approval/rejection dari Kadep (format: "1 123" atau "2 123 Alasan")
-  if (senderNumber === process.env.KADEP_NUMBER && /^[12]\s\d+/.test(messageBody)) {
+  // Handle approval/rejection dari Sekdep (format: "1 123" atau "2 123 Alasan")
+  if (senderNumber === process.env.SEKDEP_NUMBER && /^[12]\s\d+/.test(messageBody)) {
     const parts = messageBody.split(' ');
     const action = parts[0]; // 1 atau 2
     const ticketNumber = parts[1];
@@ -124,7 +124,7 @@ async function handleMessage(sock, msg) {
       // Handle approval
       const updates = {
         status: 'PENDING_PROCESS',
-        approvalKadep: 'APPROVED',
+        approvalSekdep: 'APPROVED',
         lastUpdated: new Date().toISOString()
       };
       
@@ -151,8 +151,8 @@ async function handleMessage(sock, msg) {
       
       const updates = {
         status: 'REJECTED',
-        approvalKadep: 'REJECTED',
-        reasonKadep: reason,
+        approvalSekdep: 'REJECTED',
+        reasonSekdep: reason,
         lastUpdated: new Date().toISOString()
       };
       
@@ -224,8 +224,8 @@ async function handleMessage(sock, msg) {
     
     const updates = {
       status: 'REJECTED',
-      approvalKadep: 'REJECTED',
-      reasonKadep: reason,
+      approvalSekdep: 'REJECTED',
+      reasonSekdep: reason,
       lastUpdated: new Date().toISOString()
     };
     
@@ -298,13 +298,13 @@ async function handleTicketCheck(sock, msg, ticketNumber) {
     
     switch (ticketData.status) {
       case 'PENDING_APPROVAL':
-        statusMessage += '⏳ Status: Menunggu persetujuan Kepala Departemen';
+        statusMessage += '⏳ Status: Menunggu persetujuan SekretarisDepartemen';
         break;
       case 'REJECTED':
-        statusMessage += `❌ Status: Ditolak oleh Kepala Departemen\nAlasan: ${ticketData.reasonKadep || 'Tidak ada alasan yang diberikan'}`;
+        statusMessage += `❌ Status: Ditolak oleh SekretarisDepartemen\nAlasan: ${ticketData.reasonSekdep || 'Tidak ada alasan yang diberikan'}`;
         break;
       case 'PENDING_PROCESS':
-        statusMessage += '⏳ Status: Disetujui oleh Kepala Departemen, menunggu diproses Bendahara.';
+        statusMessage += '⏳ Status: Disetujui oleh SekretarisDepartemen, menunggu diproses Bendahara.';
         break;
       case 'PROCESSED':
         statusMessage += '⏳ Status: Selesai diproses oleh Bendahara';
@@ -365,10 +365,10 @@ async function handleHelpCommand(sock, msg) {
   await msg.reply(helpMessage);
 }
 
-// Function to notify Kadep about new requests
-async function notifyKadep(ticketNumber, goodsName, quantity, reason, link, requesterNumber, requesterName) {
-  const kadepNumber = process.env.KADEP_NUMBER;
-  if (!kadepNumber) return;
+// Function to notify Sekdep about new requests
+async function notifySekdep(ticketNumber, goodsName, quantity, reason, link, requesterNumber, requesterName) {
+  const sekdepNumber = process.env.SEKDEP_NUMBER;
+  if (!sekdepNumber) return;
 
   const notificationMessage = 
     `🔔 *PERMINTAAN BARU*\n\n` +
@@ -378,6 +378,8 @@ async function notifyKadep(ticketNumber, goodsName, quantity, reason, link, requ
     `Jumlah: ${quantity}\n` +
     `Link: ${link}\n` +
     `Alasan: ${reason}\n\n` +
+    `Permintaan ini memerlukan persetujuan SekretarisDepartemen terlebih dahulu.\n\n` +
+    `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing` +
     `Balas dengan:\n` +
     `*1 ${ticketNumber}* untuk menyetujui\n` +
     `*2 ${ticketNumber} [alasan]* untuk menolak\n\n` +
@@ -385,8 +387,8 @@ async function notifyKadep(ticketNumber, goodsName, quantity, reason, link, requ
     `*2 ${ticketNumber} tidak sesuai kebutuhan*`;
 
   const botModule = require('./bot');
-  await botModule.sendMessage(kadepNumber, notificationMessage);
-  userStates[kadepNumber] = { ticketNumber };
+  await botModule.sendMessage(sekdepNumber, notificationMessage);
+  userStates[sekdepNumber] = { ticketNumber };
 }
 
 async function notifyBendahara(ticketNumber, goodsName, quantity, reason, link, requesterNumber, requesterName) {
@@ -404,7 +406,7 @@ async function notifyBendahara(ticketNumber, goodsName, quantity, reason, link, 
     `Jumlah: ${quantity}\n` +
     `Link: ${link}\n` +
     `Alasan: ${reason}\n\n` +
-    `Permintaan ini memerlukan persetujuan Kepala Departemen terlebih dahulu.\n\n` +
+    `Permintaan ini memerlukan persetujuan SekretarisDepartemen terlebih dahulu.\n\n` +
     `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing`;
 
   // Use the bot module to send message
@@ -443,7 +445,7 @@ async function notifyRequesterApproved(ticketNumber, requestData, requesterNumbe
     `✅ *PERMINTAAN ANDA DISETUJUI*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
-    `Permintaan Anda telah disetujui oleh Kepala Departemen.\n` +
+    `Permintaan Anda telah disetujui oleh SekretarisDepartemen.\n` +
     `Permintaan Anda akan segera diproses oleh Bendahara.`;
 
   // Use the bot module to send message
@@ -457,9 +459,9 @@ async function notifyRequesterRejected(ticketNumber, requestData, requesterNumbe
     `❌ *PERMINTAAN ANDA DITOLAK*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
-    `Permintaan Anda ditolak oleh Kepala Departemen dengan alasan:\n` +
+    `Permintaan Anda ditolak oleh SekretarisDepartemen dengan alasan:\n` +
     `"${reason}"\n\n` +
-    `Jika ada pertanyaan, silakan hubungi Kepala Departemen untuk informasi lebih lanjut.`;
+    `Jika ada pertanyaan, silakan hubungi SekretarisDepartemen untuk informasi lebih lanjut.`;
 
   // Use the bot module to send message
   const botModule = require('./bot');
@@ -468,7 +470,7 @@ async function notifyRequesterRejected(ticketNumber, requestData, requesterNumbe
 
 async function notifyRequesterProcessed(ticketNumber, requestData, requesterNumber, reason) {
   const notificationMessage = 
-    `✅ *PERMINTAAN ANDA TELAH DIPROSES*\n\n` +
+    `✅ *PERMINTAAN ANDA SELESAI DIPROSES BENDAHARA*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
     `Status: Sudah diproses\n` +
