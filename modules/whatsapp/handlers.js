@@ -335,6 +335,7 @@ async function handleTicketCheck(sock, msg, ticketNumber) {
           bendaharaStatus = ticketData.statusBendahara;
       }
       statusMessage += `\nStatus Proses: ${bendaharaStatus}`;
+      statusMessage += `Keterangan: ${ticketData.reasonBendahara}\n`;
     }
     
     await msg.reply(statusMessage);
