@@ -134,11 +134,12 @@ if (senderNumber === process.env.SEKDEP_NUMBER && /^\d+\s\d+/.test(messageBody))
   }
 
   // Cek apakah aksi valid (hanya 1 atau 2)
-  if (action !== '1' && action !== '2') {
+  if (action !== '1' && action !== '2' && action !== '3') {
     await msg.reply(
       `❌ Format tidak valid. Gunakan:\n` +
       `*1 ${ticketNumber}* untuk menyetujui\n` +
-      `*2 ${ticketNumber} [alasan]* untuk menolak`
+      `*2 ${ticketNumber} [alasan]* untuk menolak` +
+      `*3 ${ticketNumber}* untuk bertanya kepada pengaju`
     );
     return;
   }
@@ -190,9 +191,27 @@ if (senderNumber === process.env.SEKDEP_NUMBER && /^\d+\s\d+/.test(messageBody))
       ticketData.senderNumber, 
       reason
     );
+  } else if (action === '3') {
+    // Set state to waiting for question
+    userStates[senderNumber] = { 
+      step: 'waitingForQuestionToRequester', 
+      ticketNumber,
+      requesterNumber: ticketData.senderNumber,
+      requesterName: ticketData.senderName,
+      goodsName: ticketData.goodsName
+    };
+  
+    
+    await msg.reply(
+      `Silakan kirimkan pertanyaan yang ingin Anda tanyakan kepada *${ticketData.senderName}* mengenai:\n\n` +
+      `Tiket: *${ticketNumber}*\n` +
+      `Barang: ${ticketData.goodsName}\n` +
+      `Jumlah: ${ticketData.quantity}\n` +
+      `Link: ${ticketData.link || '-'}\n` +
+      `Keperluan: ${ticketData.reason}`
+    );
+    return;
   }
-  return;
-}
 
 if (senderNumber === process.env.SEKDEP_NUMBER && /^3\s\d+/.test(messageBody)) {
   const parts = messageBody.split(' ');
@@ -420,32 +439,56 @@ if (userStates[senderNumber] && userStates[senderNumber].step === 'waitingForBen
     );
 
 }
+}
 
 
 // Fungsi untuk mendapatkan timestamp dalam format WIB (UTC+7)
 function getWIBTimestamp() {
+  // Get current UTC time
   const now = new Date();
-  // Tambahkan 7 jam untuk WIB
-  const wibTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-  return wibTime.toISOString();
+  
+  // Format the date to ISO string but set the timezone to UTC+7 explicitly
+  // This ensures the date is interpreted correctly as WIB
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  
+  // Calculate hours in UTC+7
+  let hours = now.getUTCHours() + 7;
+  let dayAdjustment = 0;
+  
+  // Handle day rollover if hours go over 23
+  if (hours >= 24) {
+    hours -= 24;
+    dayAdjustment = 1;
+  }
+  
+  const adjustedDay = String(parseInt(day) + dayAdjustment).padStart(2, '0');
+  const hoursStr = String(hours).padStart(2, '0');
+  const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+  const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
+  
+  // Create a proper ISO string with Jakarta timezone info
+  return `${year}-${month}-${adjustedDay}T${hoursStr}:${minutes}:${seconds}.${milliseconds}+07:00`;
 }
 
-// Fungsi untuk memformat tanggal ke format lokal Indonesia
+
 function formatDateToIndonesian(dateString) {
+  // Parse the ISO date string
   const date = new Date(dateString);
-  // Tambahkan 7 jam untuk WIB jika diperlukan (jika dateString dalam UTC)
-  // Jika dateString sudah dalam WIB, baris ini bisa dihapus
-  const wibDate = new Date(date.getTime() + (7 * 60 * 60 * 1000));
   
-  return wibDate.toLocaleString('id-ID', {
+  // Format using Intl.DateTimeFormat for Indonesian locale
+  return new Intl.DateTimeFormat('id-ID', {
     timeZone: 'Asia/Jakarta',
-    day: '2-digit',
-    month: '2-digit',
     year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
-  });
+    second: '2-digit',
+    hour12: false
+  }).format(date);
 }
 
 // Add these new functions
@@ -601,6 +644,7 @@ async function notifySekdep(ticketNumber, goodsName, quantity, reason, link, req
     `Balas dengan:\n` +
     `*1 ${ticketNumber}* untuk menyetujui\n` +
     `*2 ${ticketNumber} [alasan]* untuk menolak\n\n` +
+    `*3 ${ticketNumber}* untuk bertanya kepada user\n\n` +
     `Contoh:\n` +
     `*2 ${ticketNumber} tidak sesuai kebutuhan*`;
 
