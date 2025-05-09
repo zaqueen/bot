@@ -397,7 +397,16 @@ async function handleMessage(sock, msg) {
                       statusCode === '2' ? 'sedang diproses' : 'sudah diproses';
     
     await msg.reply(`✅ Status permintaan *${ticketNumber}* diupdate menjadi: *${statusText}*\nAlasan: ${reason}`);
-    
+
+    if (statusCode === '2') {
+      const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+      await notifyRequesterInProgress(
+        ticketNumber,
+        `${ticketData.goodsName} (${ticketData.quantity})`,
+        ticketData.senderNumber,
+        reason
+      );
+    }
     if (statusCode === '3') {
       const ticketData = await sheetsOperations.getTicketData(ticketNumber);
       await notifyRequesterProcessed(
@@ -772,13 +781,24 @@ async function notifyRequesterRejected(ticketNumber, requestData, requesterNumbe
   await botModule.sendMessage(requesterNumber, notificationMessage);
 }
 
+async function notifyRequesterInProgress(ticketNumber, requestData, requesterNumber, reason) {
+  const notificationMessage = 
+    `✅ *PERMINTAAN ANDA SEDANG DIPROSES BENDAHARA*\n\n` +
+    `Nomor Tiket: *${ticketNumber}*\n` +
+    `Permintaan: ${requestData}\n\n` +
+    `Status: Sedang diproses\n` +
+    `Keterangan: ${reason}`;
+
+  const botModule = require('./bot');
+  await botModule.sendMessage(requesterNumber, notificationMessage);
+}
 async function notifyRequesterProcessed(ticketNumber, requestData, requesterNumber, reason) {
   const notificationMessage = 
     `✅ *PERMINTAAN ANDA SELESAI DIPROSES BENDAHARA*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
     `Status: Sudah diproses\n` +
-    `Keterangan: ${reason || 'Proses selesai'}`;
+    `Keterangan: ${reason}`;
 
   const botModule = require('./bot');
   await botModule.sendMessage(requesterNumber, notificationMessage);
