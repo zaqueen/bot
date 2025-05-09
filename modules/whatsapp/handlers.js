@@ -6,8 +6,8 @@ const sheetsOperations = require('../sheets/operations');
 // Command prefixes
 const COMMANDS = {
   REQUEST: '/request',
-  CHECK: '/cek',
-  HELP: '/help'
+  HELP: '/help',
+  REPLY: '/jawab'
 };
 
 const userStates = {}; // Menyimpan state pengguna berdasarkan nomor pengirim
@@ -15,6 +15,11 @@ const userStates = {}; // Menyimpan state pengguna berdasarkan nomor pengirim
 async function handleMessage(sock, msg) {
   const senderNumber = msg.from.split('@')[0];
   const messageBody = msg.body.trim();
+
+  if (messageBody.startsWith(COMMANDS.REPLY)) {
+    await handleReplyToSekdep(sock, msg);
+    return;
+  }
   
   // Jika pengguna mengirim /request
   if (messageBody === COMMANDS.REQUEST) {
@@ -24,11 +29,11 @@ async function handleMessage(sock, msg) {
     // Bubble chat pertama (contoh)
     await msg.reply(
       'Contoh request:\n' +
-      'Nama Lengkap: John Doe\n' +
+      'Nama Lengkap: Charles Subianto\n' +
       'Nama Barang: Proyektor\n' +
       'Jumlah: 1 unit\n' +
-      'Link: https://tokopedia.com/link-proyektor\n' +
-      'Alasan: Untuk presentasi di ruang rapat\n\n' +
+      'Link: https://ekatalog.its.ac.id/shop/product/proyektor (Link produk harus dari e-katalog ITS)\n' +
+      'Keperluan: Untuk presentasi di ruang rapat\n\n' +
       'Silahkan masukkan keterangan barang yang ingin diajukan dengan format seperti diatas dengan menyalin pesan dibawah:'
     );
     
@@ -38,7 +43,7 @@ async function handleMessage(sock, msg) {
       'Nama Barang:\n' +
       'Jumlah:\n' +
       'Link:\n' +
-      'Alasan:'
+      'Keperluan:'
     );
     return;
   }
@@ -59,8 +64,8 @@ async function handleMessage(sock, msg) {
         requestData.quantity = line.replace('Jumlah:', '').trim();
       } else if (line.startsWith('Link:')) {
         requestData.link = line.replace('Link:', '').trim();
-      } else if (line.startsWith('Alasan:')) {
-        requestData.reason = line.replace('Alasan:', '').trim();
+      } else if (line.startsWith('Keperluan:')) {
+        requestData.reason = line.replace('Keperluan:', '').trim();
       }
     }
     
@@ -71,8 +76,8 @@ async function handleMessage(sock, msg) {
     if (missingFields.length > 0) {
       await msg.reply(
         '❌ Format data tidak lengkap. Pastikan Anda memasukkan semua informasi yang dibutuhkan.\n\n' +
-        'Format:\nNama Lengkap:\nNama Barang:\nJumlah:\nLink:\nAlasan:\n\n' +
-        'Contoh:\nNama Lengkap: John Doe\nNama Barang: Proyektor\nJumlah: 1 unit\nLink: https://tokopedia.com/link-proyektor\nAlasan: Untuk presentasi di ruang rapat'
+        'Format:\nNama Lengkap:\nNama Barang:\nJumlah:\nLink:\nKeperluan:\n\n' +
+        'Contoh:\nNama Lengkap: John Doe\nNama Barang: Proyektor\nJumlah: 1 unit\nLink: https://ekatalog.its.ac.id/shop/product/proyektor\nKeperluan: Untuk presentasi di ruang rapat'
       );
       return;
     }
@@ -85,7 +90,7 @@ async function handleMessage(sock, msg) {
       ticketNumber,
       senderNumber,
       senderName: requestData.senderName,
-      timestamp: new Date().toISOString(),
+      timestamp: getWIBTimestamp(),
       goodsName: requestData.goodsName,
       quantity: requestData.quantity,
       link: requestData.link,
@@ -95,7 +100,7 @@ async function handleMessage(sock, msg) {
       statusBendahara: null,
       reasonSekdep: null,
       reasonBendahara: null,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: getWIBTimestamp()
     });
 
     // Kirim notifikasi ke Sekdep
@@ -105,7 +110,8 @@ async function handleMessage(sock, msg) {
                      requestData.reason, requestData.link, senderNumber, requestData.senderName);
     // Beri tahu pengguna
     await msg.reply(
-      `✅ Permintaan Anda telah diterima!\n\n*Nomor Tiket: ${ticketNumber}*\n\nGunakan nomor tiket ini untuk memeriksa status permintaan Anda. Ketik *${COMMANDS.CHECK} ${ticketNumber}* atau cukup ketik *${ticketNumber}* untuk memeriksa status.`
+      `✅ Permintaan Anda telah diterima!\n\n*Nomor Tiket: ${ticketNumber}*\n\nGunakan nomor tiket ini untuk memeriksa status permintaan Anda. Ketik *${ticketNumber}* untuk memeriksa status.`
+    
     );
 
     // Hapus state pengguna setelah selesai
@@ -113,109 +119,263 @@ async function handleMessage(sock, msg) {
     return;
   }
 
-  // Handle approval/rejection dari Sekdep (format: "1 123" atau "2 123 Alasan")
-  if (senderNumber === process.env.SEKDEP_NUMBER && /^[12]\s\d+/.test(messageBody)) {
-    const parts = messageBody.split(' ');
-    const action = parts[0]; // 1 atau 2
-    const ticketNumber = parts[1];
-    const reason = parts.slice(2).join(' ');
+// Handle approval/rejection dari Sekdep (format: "1 123" atau "2 123 Alasan")
+if (senderNumber === process.env.SEKDEP_NUMBER && /^\d+\s\d+/.test(messageBody)) {
+  const parts = messageBody.split(' ');
+  const action = parts[0]; // angka aksi
+  const ticketNumber = parts[1];
+  const reason = parts.slice(2).join(' ');
 
-    if (action === '1') {
-      // Handle approval
-      const updates = {
-        status: 'PENDING_PROCESS',
-        approvalSekdep: 'APPROVED',
-        lastUpdated: new Date().toISOString()
-      };
-      
-      await sheetsOperations.updateTicketStatus(ticketNumber, updates);
-      await msg.reply(`✅ Anda telah menyetujui permintaan *${ticketNumber}*`);
-      
-      // Notify Bendahara
-      const ticketData = await sheetsOperations.getTicketData(ticketNumber);
-      await notifyRequesterApproved(
-        ticketNumber, 
-        `${ticketData.goodsName} (${ticketData.quantity})`, 
-        ticketData.senderNumber, 
-        reason
-      );
-      await notifyBendaharaForProcessing(ticketNumber, ticketData);
-      
-    } else if (action === '2') {
-      // Handle rejection
-      if (!reason) {
-        userStates[senderNumber] = { step: 'waitingForRejectionReason', ticketNumber };
-        await msg.reply(`Silakan berikan alasan penolakan untuk tiket *${ticketNumber}*:`);
-        return;
-      }
-      
-      const updates = {
-        status: 'REJECTED',
-        approvalSekdep: 'REJECTED',
-        reasonSekdep: reason,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      await sheetsOperations.updateTicketStatus(ticketNumber, updates);
-      await msg.reply(`❌ Anda telah menolak permintaan *${ticketNumber}* dengan alasan: ${reason}`);
-      
-      // Notify requester
-      const ticketData = await sheetsOperations.getTicketData(ticketNumber);
-      await notifyRequesterRejected(
-        ticketNumber, 
-        `${ticketData.goodsName} (${ticketData.quantity})`, 
-        ticketData.senderNumber, 
-        reason
-      );
-    }
+  // Cek apakah tiket ada
+  const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+  if (!ticketData) {
+    await msg.reply(`❌ Tiket dengan nomor *${ticketNumber}* tidak ditemukan. Silakan periksa kembali nomor tiket.`);
     return;
   }
 
-  if (senderNumber === process.env.BENDAHARA_NUMBER && /^[123]\s\d+/.test(messageBody)) {
-    const parts = messageBody.split(' ');
-    const statusCode = parts[0]; // 1, 2, atau 3
-    const ticketNumber = parts[1];
-    const reason = parts.slice(2).join(' ') || (statusCode === '1' ? 'Belum diproses' : 
-                                              statusCode === '2' ? 'Sedang diproses' : 'Sudah diproses');
+  // Cek apakah aksi valid (hanya 1 atau 2)
+  if (action !== '1' && action !== '2') {
+    await msg.reply(
+      `❌ Format tidak valid. Gunakan:\n` +
+      `*1 ${ticketNumber}* untuk menyetujui\n` +
+      `*2 ${ticketNumber} [alasan]* untuk menolak`
+    );
+    return;
+  }
 
-    // Determine status
-    let status;
-    switch (statusCode) {
-      case '1': status = 'NOT_PROCESSED'; break;
-      case '2': status = 'IN_PROGRESS'; break;
-      case '3': status = 'PROCESSED'; break;
-    }
-
-    // Update sheet
+  if (action === '1') {
+    // Handle approval
     const updates = {
       status: 'PENDING_PROCESS',
-      statusBendahara: status,
-      reasonBendahara: reason,
-      lastUpdated: new Date().toISOString()
+      approvalSekdep: 'APPROVED',
+      lastUpdated: getWIBTimestamp()
     };
     
     await sheetsOperations.updateTicketStatus(ticketNumber, updates);
-    await msg.reply(`✅ Status permintaan *${ticketNumber}* diupdate menjadi: *${status}*\nAlasan: ${reason}`);
+    await msg.reply(`✅ Anda telah menyetujui permintaan *${ticketNumber}*`);
     
-    if (status === 'PROCESSED') {
-      const updates = {
-        status: 'PROCESSED',
-        statusBendahara: status,
-        reasonBendahara: reason,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      await sheetsOperations.updateTicketStatus(ticketNumber, updates);
-      const ticketData = await sheetsOperations.getTicketData(ticketNumber);
-      await notifyRequesterProcessed(
-        ticketNumber,
-        `${ticketData.goodsName} (${ticketData.quantity})`,
-        ticketData.senderNumber,
-        reason
-      );
+    // Notify Bendahara
+    const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+    await notifyRequesterApproved(
+      ticketNumber, 
+      `${ticketData.goodsName} (${ticketData.quantity})`, 
+      ticketData.senderNumber, 
+      reason
+    );
+    await notifyBendaharaForProcessing(ticketNumber, ticketData);
+    
+  } else if (action === '2') {
+    // Handle rejection
+    if (!reason) {
+      userStates[senderNumber] = { step: 'waitingForRejectionReason', ticketNumber };
+      await msg.reply(`Silakan berikan alasan penolakan untuk tiket *${ticketNumber}*:`);
+      return;
     }
+    
+    const updates = {
+      status: 'REJECTED',
+      approvalSekdep: 'REJECTED',
+      reasonSekdep: reason,
+      lastUpdated: getWIBTimestamp()
+    };
+    
+    await sheetsOperations.updateTicketStatus(ticketNumber, updates);
+    await msg.reply(`❌ Anda telah menolak permintaan *${ticketNumber}* dengan alasan: ${reason}`);
+    
+    // Notify requester
+    const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+    await notifyRequesterRejected(
+      ticketNumber, 
+      `${ticketData.goodsName} (${ticketData.quantity})`, 
+      ticketData.senderNumber, 
+      reason
+    );
+  }
+  return;
+}
+
+if (senderNumber === process.env.SEKDEP_NUMBER && /^3\s\d+/.test(messageBody)) {
+  const parts = messageBody.split(' ');
+  const ticketNumber = parts[1];
+  
+  // Check if ticket exists
+  const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+  if (!ticketData) {
+    await msg.reply(`❌ Tiket dengan nomor *${ticketNumber}* tidak ditemukan. Silakan periksa kembali nomor tiket.`);
     return;
   }
+  
+  // Set state to waiting for question
+  userStates[senderNumber] = { 
+    step: 'waitingForQuestionToRequester', 
+    ticketNumber,
+    requesterNumber: ticketData.senderNumber,
+    requesterName: ticketData.senderName,
+    goodsName: ticketData.goodsName
+  };
+  
+  await msg.reply(
+    `Silakan kirimkan pertanyaan yang ingin Anda tanyakan kepada *${ticketData.senderName}* mengenai:\n\n` +
+    `Tiket: *${ticketNumber}*\n` +
+    `Barang: ${ticketData.goodsName}\n` +
+    `Jumlah: ${ticketData.quantity}\n` +
+    `Link: ${ticketData.link || '-'}\n` +
+    `Keperluan: ${ticketData.reason}`
+  );
+  return;
+}
+
+// Add this to handle Sekdep's question
+if (userStates[senderNumber] && userStates[senderNumber].step === 'waitingForQuestionToRequester') {
+  const question = messageBody;
+  const { ticketNumber, requesterNumber, requesterName, goodsName } = userStates[senderNumber];
+  
+  // Send question to requester
+  await sendQuestionToRequester(
+    ticketNumber,
+    goodsName,
+    requesterNumber,
+    requesterName,
+    senderNumber,
+    question
+  );
+  
+  await msg.reply(`✅ Pertanyaan Anda telah dikirimkan kepada ${requesterName} (${requesterNumber})`);
+  delete userStates[senderNumber];
+  return;
+}
+
+// Add this to handle requester's reply
+if (userStates[senderNumber] && userStates[senderNumber].step === 'waitingForReplyToSekdep') {
+  const reply = messageBody;
+  const { ticketNumber, sekdepNumber, goodsName } = userStates[senderNumber];
+  
+  // Send reply to Sekdep
+  await sendReplyToSekdep(
+    ticketNumber,
+    goodsName,
+    senderNumber,
+    sekdepNumber,
+    reply
+  );
+  
+  await msg.reply(`✅ Balasan Anda telah dikirimkan kepada Sekretaris Departemen`);
+  delete userStates[senderNumber];
+  return;
+}
+
+if (senderNumber === process.env.BENDAHARA_NUMBER && /^\d+\s\d+/.test(messageBody)) {
+  const parts = messageBody.split(' ');
+  const statusCode = parts[0]; // 1, 2, atau 3
+  const ticketNumber = parts[1];
+  const reason = parts.slice(2).join(' ');
+
+  // Cek apakah tiket ada
+  const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+  if (!ticketData) {
+    await msg.reply(`❌ Tiket dengan nomor *${ticketNumber}* tidak ditemukan. Silakan periksa kembali nomor tiket.`);
+    return;
+  }
+
+  // Cek apakah aksi valid (hanya 1, 2, atau 3)
+  if (statusCode !== '1' && statusCode !== '2' && statusCode !== '3') {
+    await msg.reply(
+      `❌ Format tidak valid. Gunakan:\n` +
+      `*1 ${ticketNumber}* untuk status belum diproses\n` +
+      `*2 ${ticketNumber} [alasan]* untuk status sedang diproses\n` +
+      `*3 ${ticketNumber} [alasan]* untuk status sudah diproses`
+    );
+    return;
+  }
+
+  // Determine status
+  let status;
+  switch (statusCode) {
+    case '1': status = 'NOT_PROCESSED'; break;
+    case '2': status = 'IN_PROGRESS'; break;
+    case '3': status = 'PROCESSED'; break;
+  }
+
+  // Jika statusCode 2 atau 3 dan alasan tidak diberikan, minta alasan
+  if ((statusCode === '2' || statusCode === '3') && !reason) {
+    userStates[senderNumber] = { 
+      step: 'waitingForBendaharaReason', 
+      ticketNumber, 
+      statusCode 
+    };
+    
+    const actionText = statusCode === '2' ? 'sedang diproses' : 'sudah diproses';
+    await msg.reply(`Silakan berikan alasan/keterangan untuk status ${actionText} pada tiket *${ticketNumber}*:`);
+    return;
+  }
+
+  const defaultReason = statusCode === '1' ? 'Belum diproses' : 
+                        statusCode === '2' ? 'Sedang diproses' : 'Sudah diproses';
+  const finalReason = reason || defaultReason;
+
+  // Update sheet
+  const updates = {
+    status: statusCode === '3' ? 'PROCESSED' : 'PENDING_PROCESS',
+    statusBendahara: status,
+    reasonBendahara: finalReason,
+    lastUpdated: getWIBTimestamp()
+  };
+  
+  await sheetsOperations.updateTicketStatus(ticketNumber, updates);
+  await msg.reply(`✅ Status permintaan *${ticketNumber}* diupdate menjadi: *${status}*\nAlasan: ${finalReason}`);
+  
+  if (status === 'PROCESSED') {
+    const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+    await notifyRequesterProcessed(
+      ticketNumber,
+      `${ticketData.goodsName} (${ticketData.quantity})`,
+      ticketData.senderNumber,
+      finalReason
+    );
+  }
+  return;
+}
+
+// Handle pengguna sedang menunggu alasan dari Bendahara
+if (userStates[senderNumber] && userStates[senderNumber].step === 'waitingForBendaharaReason') {
+  const reason = messageBody;
+  const ticketNumber = userStates[senderNumber].ticketNumber;
+  const statusCode = userStates[senderNumber].statusCode;
+  
+  let status;
+  switch (statusCode) {
+    case '1': status = 'NOT_PROCESSED'; break;
+    case '2': status = 'IN_PROGRESS'; break;
+    case '3': status = 'PROCESSED'; break;
+  }
+  
+  const updates = {
+    status: statusCode === '3' ? 'PROCESSED' : 'PENDING_PROCESS',
+    statusBendahara: status,
+    reasonBendahara: reason,
+    lastUpdated: getWIBTimestamp()
+  };
+  
+  await sheetsOperations.updateTicketStatus(ticketNumber, updates);
+  
+  const statusText = statusCode === '1' ? 'belum diproses' : 
+                    statusCode === '2' ? 'sedang diproses' : 'sudah diproses';
+  
+  await msg.reply(`✅ Status permintaan *${ticketNumber}* diupdate menjadi: *${statusText}*\nAlasan: ${reason}`);
+  
+  if (statusCode === '3') {
+    const ticketData = await sheetsOperations.getTicketData(ticketNumber);
+    await notifyRequesterProcessed(
+      ticketNumber,
+      `${ticketData.goodsName} (${ticketData.quantity})`,
+      ticketData.senderNumber,
+      reason
+    );
+  }
+  
+  delete userStates[senderNumber];
+  return;
+}
 
   // Handle pengguna sedang menunggu alasan penolakan
   if (userStates[senderNumber] && userStates[senderNumber].step === 'waitingForRejectionReason') {
@@ -226,7 +386,7 @@ async function handleMessage(sock, msg) {
       status: 'REJECTED',
       approvalSekdep: 'REJECTED',
       reasonSekdep: reason,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: getWIBTimestamp()
     };
     
     await sheetsOperations.updateTicketStatus(ticketNumber, updates);
@@ -241,11 +401,6 @@ async function handleMessage(sock, msg) {
     );
     
     delete userStates[senderNumber];
-    return;
-  }
-
-  if (messageBody.startsWith(COMMANDS.CHECK)) {
-    await handleCheckCommand(sock, msg, senderNumber, messageBody);
     return;
   }
 
@@ -266,24 +421,81 @@ async function handleMessage(sock, msg) {
 
 }
 
-async function handleCheckCommand(sock, msg, senderNumber, messageBody) {
-  try {
-    const parts = messageBody.split(' ');
-    if (parts.length !== 2) {
-      await msg.reply(
-        `Format cek tidak valid. Gunakan format:\n*${COMMANDS.CHECK} [nomor_tiket]*\n\nContoh:\n*${COMMANDS.CHECK} 123*`
-      );
-      return;
-    }
 
-    const ticketNumber = parts[1].trim();
-    await handleTicketCheck(sock, msg, ticketNumber);
-    
-  } catch (error) {
-    console.error('Error handling check command:', error);
-    await msg.reply('Terjadi kesalahan saat memeriksa status tiket. Silakan coba lagi nanti.');
-  }
+// Fungsi untuk mendapatkan timestamp dalam format WIB (UTC+7)
+function getWIBTimestamp() {
+  const now = new Date();
+  // Tambahkan 7 jam untuk WIB
+  const wibTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+  return wibTime.toISOString();
 }
+
+// Fungsi untuk memformat tanggal ke format lokal Indonesia
+function formatDateToIndonesian(dateString) {
+  const date = new Date(dateString);
+  // Tambahkan 7 jam untuk WIB jika diperlukan (jika dateString dalam UTC)
+  // Jika dateString sudah dalam WIB, baris ini bisa dihapus
+  const wibDate = new Date(date.getTime() + (7 * 60 * 60 * 1000));
+  
+  return wibDate.toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+// Add these new functions
+async function handleReplyToSekdep(sock, msg) {
+  const senderNumber = msg.from.split('@')[0];
+  
+  userStates[senderNumber] = { 
+    step: 'waitingForReplyToSekdep', 
+    sekdepNumber: process.env.SEKDEP_NUMBER
+  };
+  
+  await msg.reply(
+    `Silakan kirimkan balasan Anda untuk Sekretaris Departemen:`
+  );
+}
+
+async function sendQuestionToRequester(ticketNumber, goodsName, requesterNumber, requesterName, sekdepNumber, question) {
+  const notificationMessage = 
+    `❓ *PERTANYAAN DARI SEKRETARIS DEPARTEMEN*\n\n` +
+    `Nomor Tiket: *${ticketNumber}*\n` +
+    `Barang: ${goodsName}\n\n` +
+    `Pertanyaan:\n"${question}"\n\n` +
+    `Untuk membalas, ketik *${COMMANDS.REPLY}*`;
+
+  const botModule = require('./bot');
+  await botModule.sendMessage(requesterNumber, notificationMessage);
+  
+  // Set user state for the requester
+  userStates[requesterNumber] = {
+    step: 'pendingReplyToSekdep',
+    ticketNumber: ticketNumber,
+    sekdepNumber: sekdepNumber,
+    goodsName: goodsName
+  };
+}
+
+async function sendReplyToSekdep(ticketNumber, goodsName, requesterNumber, sekdepNumber, reply) {
+  const notificationMessage = 
+    `✉️ *BALASAN DARI PENGAJU PERMINTAAN*\n\n` +
+    `Nomor Tiket: *${ticketNumber}*\n` +
+    `Barang: ${goodsName}\n` +
+    `Dari: ${requesterNumber}\n\n` +
+    `Balasan:\n"${reply}"\n\n` +
+    `Untuk menanyakan hal lain, gunakan perintah:\n` +
+    `*3 ${ticketNumber}*`;
+
+  const botModule = require('./bot');
+  await botModule.sendMessage(sekdepNumber, notificationMessage);
+}
+
 
 async function handleTicketCheck(sock, msg, ticketNumber) {
   try {
@@ -293,49 +505,44 @@ async function handleTicketCheck(sock, msg, ticketNumber) {
       await msg.reply(`❌ Tiket *${ticketNumber}* tidak ditemukan. Periksa kembali nomor tiket Anda.`);
       return;
     }
+    
     let statusMessage = `📋 *Status Tiket: ${ticketNumber}*\n\n`;
     
     statusMessage += `Pemohon: ${ticketData.senderName}\n`;
     statusMessage += `Permintaan: ${ticketData.goodsName}\n`;
     statusMessage += `Jumlah: ${ticketData.quantity}\n`;
     if (ticketData.link) statusMessage += `Link: ${ticketData.link}\n`;
-    statusMessage += `Alasan: ${ticketData.reason}\n`;
-    statusMessage += `Tanggal: ${new Date(ticketData.timestamp).toLocaleString('id-ID')}\n\n`;
+    statusMessage += `Keperluan: ${ticketData.reason}\n`;
+    statusMessage += `Waktu pengajuan: ${formatDateToIndonesian(ticketData.timestamp)}\n\n`;
     
-    switch (ticketData.status) {
-      case 'PENDING_APPROVAL':
-        statusMessage += '⏳ Status: Menunggu persetujuan SekretarisDepartemen';
-        break;
-      case 'REJECTED':
-        statusMessage += `❌ Status: Ditolak oleh SekretarisDepartemen\nAlasan: ${ticketData.reasonSekdep || 'Tidak ada alasan yang diberikan'}`;
-        break;
-      case 'PENDING_PROCESS':
-        statusMessage += '⏳ Status: Disetujui oleh SekretarisDepartemen, menunggu diproses Bendahara.';
-        break;
-      case 'PROCESSED':
-        statusMessage += '⏳ Status: Selesai diproses oleh Bendahara';
-        break;
-      default:
-        statusMessage += '❓ Status: Tidak diketahui';
+    // Status gabungan yang lebih jelas
+    if (ticketData.status === 'PENDING_APPROVAL') {
+      statusMessage += '⏳ *Status: Menunggu persetujuan Sekretaris Departemen*';
+    } 
+    else if (ticketData.status === 'REJECTED') {
+      statusMessage += `❌ *Status: Ditolak oleh Sekretaris Departemen*\n`;
+      statusMessage += `Alasan: ${ticketData.reasonSekdep || 'Tidak ada alasan yang diberikan'}`;
     }
-    
-    if (ticketData.statusBendahara) {
-      let bendaharaStatus = '';
-      switch (ticketData.statusBendahara) {
-        case 'NOT_PROCESSED':
-          bendaharaStatus = 'Belum diproses';
-          break;
-        case 'IN_PROGRESS':
-          bendaharaStatus = 'Sedang diproses';
-          break;
-        case 'PROCESSED':
-          bendaharaStatus = 'Sudah diproses';
-          break;
-        default:
-          bendaharaStatus = ticketData.statusBendahara;
+    else if (ticketData.status === 'PENDING_PROCESS' || ticketData.status === 'PROCESSED') {
+      // Tampilkan status dari bendahara jika sudah disetujui oleh Sekdep
+      if (ticketData.statusBendahara === 'NOT_PROCESSED') {
+        statusMessage += '✅ *Status: Disetujui oleh Sekdep, namun belum diproses oleh Bendahara*';
+      } 
+      else if (ticketData.statusBendahara === 'IN_PROGRESS') {
+        statusMessage += '🔄 *Status: Sedang diproses oleh Bendahara*';
+        if (ticketData.reasonBendahara) {
+          statusMessage += `\nKeterangan: ${ticketData.reasonBendahara}`;
+        }
       }
-      statusMessage += `\nStatus Proses: ${bendaharaStatus}`;
-      statusMessage += `Keterangan: ${ticketData.reasonBendahara}\n`;
+      else if (ticketData.statusBendahara === 'PROCESSED') {
+        statusMessage += '✅ *Status: Selesai diproses oleh Bendahara*';
+        if (ticketData.reasonBendahara) {
+          statusMessage += `\nKeterangan: ${ticketData.reasonBendahara}`;
+        }
+      }
+    }
+    else {
+      statusMessage += '❓ *Status: Tidak diketahui*';
     }
     
     await msg.reply(statusMessage);
@@ -359,15 +566,19 @@ async function handleHelpCommand(sock, msg) {
     `   Jumlah: [isi jumlah barang]\n` +
     `   Link: [isi link barang]\n` +
     `   Alasan: [isi alasan permintaan]\n\n` +
-    `2️⃣ *${COMMANDS.CHECK} [nomor_tiket]*\n` +
-    `   Untuk memeriksa status permintaan\n` +
-    `   Contoh: ${COMMANDS.CHECK} 123\n\n` +
-    `3️⃣ *[nomor_tiket]*\n` +
-    `   Anda juga dapat langsung mengetikkan nomor tiket untuk memeriksa status\n` +
+    `2️⃣ *[nomor_tiket]*\n` +
+    `   Untuk memeriksa status permintaan, cukup ketikkan nomor tiket\n` +
     `   Contoh: 123\n\n` +
+    `3️⃣ *${COMMANDS.REPLY}*\n` +
+    `   Untuk membalas pertanyaan dari Sekretaris Departemen\n\n` +
     `4️⃣ *${COMMANDS.HELP}*\n` +
     `   Untuk menampilkan panduan ini\n\n` +
-    `ℹ️ Setelah mengajukan permintaan, Anda akan  menerima nomor tiket yang dapat digunakan untuk memeriksa status permintaan.`;
+    (msg.from.split('@')[0] === process.env.SEKDEP_NUMBER ? 
+    `\n*KHUSUS SEKRETARIS DEPARTEMEN:*\n` +
+    `5️⃣ *3 [nomor_tiket]*\n` +
+    `   Untuk mengirim pertanyaan kepada pengaju permintaan\n` +
+    `   Contoh: 3 123\n` : '');
+    `ℹ️ Setelah mengajukan permintaan, Anda akan menerima nomor tiket yang dapat digunakan untuk memeriksa status permintaan.`;
     
   await msg.reply(helpMessage);
 }
@@ -384,8 +595,8 @@ async function notifySekdep(ticketNumber, goodsName, quantity, reason, link, req
     `Permintaan: ${goodsName}\n` +
     `Jumlah: ${quantity}\n` +
     `Link: ${link}\n` +
-    `Alasan: ${reason}\n\n` +
-    `Permintaan ini memerlukan persetujuan SekretarisDepartemen terlebih dahulu.\n\n` +
+    `Keperluan: ${reason}\n\n` +
+    `Permintaan ini memerlukan persetujuan Sekretaris Departemen terlebih dahulu.\n\n` +
     `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing\n\n` +
     `Balas dengan:\n` +
     `*1 ${ticketNumber}* untuk menyetujui\n` +
@@ -412,8 +623,8 @@ async function notifyBendahara(ticketNumber, goodsName, quantity, reason, link, 
     `Permintaan: ${goodsName}\n` +
     `Jumlah: ${quantity}\n` +
     `Link: ${link}\n` +
-    `Alasan: ${reason}\n\n` +
-    `Permintaan ini memerlukan persetujuan SekretarisDepartemen terlebih dahulu.\n\n` +
+    `Keperluan: ${reason}\n\n` +
+    `Permintaan ini memerlukan persetujuan Sekretaris Departemen terlebih dahulu.\n\n` +
     `Link spreadsheet: https://docs.google.com/spreadsheets/d/1wh3MvjfAFeOGAp3UiMNjI5Ao3rHtuCHAS-ymd2M1dA4/edit?usp=sharing`;
 
   // Use the bot module to send message
@@ -433,7 +644,7 @@ async function notifyBendaharaForProcessing(ticketNumber, ticketData) {
     `Permintaan: ${ticketData.goodsName}\n` +
     `Jumlah: ${ticketData.quantity}\n` +
     `Link: ${ticketData.link || '-'}\n` +
-    `Alasan: ${ticketData.reason}\n\n` +
+    `Keperluan: ${ticketData.reason}\n\n` +
     `Balas dengan:\n\n` +
     `*1 ${ticketNumber}* (belum diproses)\n` +
     `*2 ${ticketNumber} [alasan]* (sedang diproses)\n` +
@@ -452,7 +663,7 @@ async function notifyRequesterApproved(ticketNumber, requestData, requesterNumbe
     `✅ *PERMINTAAN ANDA DISETUJUI*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
-    `Permintaan Anda telah disetujui oleh SekretarisDepartemen.\n` +
+    `Permintaan Anda telah disetujui oleh Sekretaris Departemen.\n` +
     `Permintaan Anda akan segera diproses oleh Bendahara.`;
 
   // Use the bot module to send message
@@ -466,9 +677,9 @@ async function notifyRequesterRejected(ticketNumber, requestData, requesterNumbe
     `❌ *PERMINTAAN ANDA DITOLAK*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
-    `Permintaan Anda ditolak oleh SekretarisDepartemen dengan alasan:\n` +
+    `Permintaan Anda ditolak oleh Sekretaris Departemen dengan alasan:\n` +
     `"${reason}"\n\n` +
-    `Jika ada pertanyaan, silakan hubungi SekretarisDepartemen untuk informasi lebih lanjut.`;
+    `Jika ada pertanyaan, silakan hubungi Sekretaris Departemen untuk informasi lebih lanjut.`;
 
   // Use the bot module to send message
   const botModule = require('./bot');
