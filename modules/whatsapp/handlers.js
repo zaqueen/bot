@@ -397,16 +397,7 @@ async function handleMessage(sock, msg) {
                       statusCode === '2' ? 'sedang diproses' : 'sudah diproses';
     
     await msg.reply(`✅ Status permintaan *${ticketNumber}* diupdate menjadi: *${statusText}*\nAlasan: ${reason}`);
-
-    if (statusCode === '2') {
-      const ticketData = await sheetsOperations.getTicketData(ticketNumber);
-      await notifyRequesterInProgress(
-        ticketNumber,
-        `${ticketData.goodsName} (${ticketData.quantity})`,
-        ticketData.senderNumber,
-        reason
-      );
-    }
+    
     if (statusCode === '3') {
       const ticketData = await sheetsOperations.getTicketData(ticketNumber);
       await notifyRequesterProcessed(
@@ -439,35 +430,11 @@ async function handleMessage(sock, msg) {
 }
 
 
-// Fungsi untuk mendapatkan timestamp dalam format WIB (UTC+7)
 function getWIBTimestamp() {
-  // Get current UTC time
   const now = new Date();
+  now.setTime(now.getTime() + (7 * 60 * 60 * 1000));
   
-  // Format the date to ISO string but set the timezone to UTC+7 explicitly
-  // This ensures the date is interpreted correctly as WIB
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(now.getUTCDate()).padStart(2, '0');
-  
-  // Calculate hours in UTC+7
-  let hours = now.getUTCHours() + 7;
-  let dayAdjustment = 0;
-  
-  // Handle day rollover if hours go over 23
-  if (hours >= 24) {
-    hours -= 24;
-    dayAdjustment = 1;
-  }
-  
-  const adjustedDay = String(parseInt(day) + dayAdjustment).padStart(2, '0');
-  const hoursStr = String(hours).padStart(2, '0');
-  const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-  const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
-  
-  // Create a proper ISO string with Jakarta timezone info
-  return `${year}-${month}-${adjustedDay}T${hoursStr}:${minutes}:${seconds}.${milliseconds}+07:00`;
+  return now.toISOString().replace('Z', '+07:00');
 }
 
 
@@ -781,24 +748,13 @@ async function notifyRequesterRejected(ticketNumber, requestData, requesterNumbe
   await botModule.sendMessage(requesterNumber, notificationMessage);
 }
 
-async function notifyRequesterInProgress(ticketNumber, requestData, requesterNumber, reason) {
-  const notificationMessage = 
-    `✅ *PERMINTAAN ANDA SEDANG DIPROSES BENDAHARA*\n\n` +
-    `Nomor Tiket: *${ticketNumber}*\n` +
-    `Permintaan: ${requestData}\n\n` +
-    `Status: Sedang diproses\n` +
-    `Keterangan: ${reason}`;
-
-  const botModule = require('./bot');
-  await botModule.sendMessage(requesterNumber, notificationMessage);
-}
 async function notifyRequesterProcessed(ticketNumber, requestData, requesterNumber, reason) {
   const notificationMessage = 
     `✅ *PERMINTAAN ANDA SELESAI DIPROSES BENDAHARA*\n\n` +
     `Nomor Tiket: *${ticketNumber}*\n` +
     `Permintaan: ${requestData}\n\n` +
     `Status: Sudah diproses\n` +
-    `Keterangan: ${reason}`;
+    `Keterangan: ${reason || 'Proses selesai'}`;
 
   const botModule = require('./bot');
   await botModule.sendMessage(requesterNumber, notificationMessage);
