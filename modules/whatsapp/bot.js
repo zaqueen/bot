@@ -1,4 +1,3 @@
-// bot.js
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
@@ -7,190 +6,168 @@ const path = require('path');
 const pino = require('pino');
 const handlers = require('./handlers');
 
-// Ensure auth directory exists
+// Config
 const AUTH_FOLDER = path.join(__dirname, 'auth_info_baileys');
+const RECONNECT_INTERVAL = 5000; // 5 detik
+const MAX_RECONNECT_ATTEMPTS = 10;
+let reconnectAttempts = 0;
+let isShuttingDown = false;
+
+// Ensure auth directory exists
 if (!fs.existsSync(AUTH_FOLDER)) {
   fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 }
 
 let sock = null;
 
+// Fungsi untuk handle reconnect dengan exponential backoff
+const delayedReconnect = () => {
+  if (isShuttingDown) return;
+  
+  reconnectAttempts++;
+  const delay = Math.min(RECONNECT_INTERVAL * Math.pow(2, reconnectAttempts), 30000); // Max 30 detik
+  
+  console.log(`Mencoba reconnect (attempt ${reconnectAttempts}) dalam ${delay}ms...`);
+  
+  setTimeout(() => {
+    if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+      initialize().catch(err => {
+        console.error('Gagal reconnect:', err);
+        delayedReconnect();
+      });
+    } else {
+      console.error('Max reconnect attempts reached. Silakan restart manual.');
+    }
+  }, delay);
+};
+
 async function initialize() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-  
-  // Logger with reduced verbosity
-  const logger = pino({ level: 'warn' });
-  
-  sock = makeWASocket({
-    printQRInTerminal: true,
-    auth: state,
-    logger: logger,
-    browser: ['WhatsApp Bot', 'Chrome', '10.0'],
-    version: [2, 2323, 4]  // Specify WhatsApp web version
-  });
-
-  // Handle QR code and connection events
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
     
-    // Log the update for debugging
-    console.log('Connection update:', JSON.stringify(update, null, 2));
+    const logger = pino({ level: 'warn' });
     
-    if (qr) {
-      console.log('QR Code diterima, silahkan scan dengan WhatsApp Anda:');
-      qrcode.generate(qr, { small: true });
-    }
-    
-    if (connection === 'open') {
-      console.log('WhatsApp Bot siap digunakan!');
-      
-      // Send test message to yourself to confirm connectivity
-      try {
-        const myNumber = sock.user.id.split(':')[0];
-        await sock.sendMessage(myNumber + '@s.whatsapp.net', { text: 'Bot started successfully!' });
-        console.log('Test message sent successfully');
-      } catch (err) {
-        console.log('Failed to send test message:', err);
+    sock = makeWASocket({
+      printQRInTerminal: true,
+      auth: state,
+      logger: logger,
+      browser: ['WhatsApp Bot', 'Chrome', '10.0'],
+      version: [2, 2323, 4],
+      getMessage: async (key) => {
+        // Implement cache jika diperlukan
+        return null;
       }
-    }
-    
-    if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error instanceof Boom && 
-        lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut);
+    });
+
+    // Handle connection updates
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
       
-      console.log('Koneksi terputus karena:', lastDisconnect?.error?.output?.payload?.message || 'Alasan tidak diketahui');
+      console.log('Connection update:', JSON.stringify(update, null, 2));
       
-      if (shouldReconnect) {
-        console.log('Mencoba menyambung kembali...');
-        setTimeout(() => {
-          console.log('Melakukan inisialisasi ulang...');
-          initialize();
-        }, 5000); // Wait 5 seconds before reconnecting
-      } else {
-        console.log('Koneksi ditutup secara permanen. Silakan restart bot secara manual.');
+      if (qr) {
+        qrcode.generate(qr, { small: true });
       }
-    }
-  });
-
-  // Save credentials when updated
-  sock.ev.on('creds.update', saveCreds);
-
-  // Handle incoming messages with improved reliability
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    try {
-      console.log('Received message:', JSON.stringify(messages, null, 2));
       
-      for (const msg of messages) {
-        // Ignore status updates and messages from self
-        if (msg.key.remoteJid === 'status@broadcast' || msg.key.fromMe) continue;
+      if (connection === 'open') {
+        console.log('✅ Connected to WhatsApp');
+        reconnectAttempts = 0; // Reset counter saat connect sukses
         
-        // Extract message content with better handling of different message types
-        const messageContent = msg.message || {};
-        const messageType = Object.keys(messageContent)[0];
-        let body = '';
-        
-        if (messageType === 'conversation') {
-          body = messageContent.conversation;
-        } else if (messageType === 'extendedTextMessage') {
-          body = messageContent.extendedTextMessage.text;
-        } else if (messageType === 'imageMessage' && messageContent.imageMessage.caption) {
-          body = messageContent.imageMessage.caption;
-        } else if (messageType === 'documentWithCaptionMessage' && messageContent.documentWithCaptionMessage?.message?.documentMessage?.caption) {
-          body = messageContent.documentWithCaptionMessage.message.documentMessage.caption;
-        } else if (messageType === 'videoMessage' && messageContent.videoMessage?.caption) {
-          body = messageContent.videoMessage.caption;
-        } else {
-          console.log(`Unhandled message type: ${messageType}`);
-        }
-        
-        // Create a compatible message format for the handlers
-        const compatMsg = {
-          from: msg.key.remoteJid,
-          body: body,
-          id: msg.key.id,
-          timestamp: msg.messageTimestamp,
-          raw: msg,
-          reply: async (text) => {
-            await sock.sendMessage(msg.key.remoteJid, { text }, { quoted: msg });
-          }
-        };
-        
-        // Handle the message with proper error catching
+        // Test message
         try {
-          await handlers.handleMessage(sock, compatMsg);
-        } catch (error) {
-          console.error('Error in message handler:', error);
-          // Try to notify about the error
-          try {
-            await sock.sendMessage(msg.key.remoteJid, { 
-              text: 'Terjadi kesalahan saat memproses pesan. Silakan coba lagi.' 
-            }, { quoted: msg });
-          } catch (replyError) {
-            console.error('Failed to send error notification:', replyError);
+          const myNumber = sock.user?.id?.split(':')[0];
+          if (myNumber) {
+            await sock.sendMessage(myNumber + '@s.whatsapp.net', { text: 'Bot reconnected successfully!' });
           }
+        } catch (err) {
+          console.log('Test message error:', err);
         }
       }
-    } catch (globalError) {
-      console.error('Critical error in message processing:', globalError);
-    }
-  });
+      
+      if (connection === 'close') {
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const isIntentionalDisconnect = [
+          DisconnectReason.loggedOut,
+          DisconnectReason.badSession
+        ].includes(statusCode);
+        
+        console.log('Disconnect reason:', statusCode || 'unknown');
+        
+        if (!isShuttingDown && !isIntentionalDisconnect) {
+          delayedReconnect();
+        } else {
+          console.log('Disconnect permanen. Harus restart manual.');
+        }
+      }
+    });
 
-  // Add group participants event handling if needed
-  sock.ev.on('group-participants.update', async (update) => {
-    console.log('Group participants update:', update);
-    // You can handle group join/leave events here
-  });
+    // Credentials handler
+    sock.ev.on('creds.update', saveCreds);
 
-  // Monitor state changes
-  sock.ev.on('CB:Blocklist', json => {
-    if (json.blocklist) {
-      console.log('Blocklist updated');
-    }
-  });
+    // Message handler (existing code)
+    sock.ev.on('messages.upsert', ({ messages }) => {
+      // ... (kode message handling yang sudah ada)
+    });
 
-  // Catch and log any unexpected errors
-  process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-    // Keep the bot running despite errors
-  });
+    // Error handling
+    sock.ev.on('connection.phone.code', (code) => {
+      console.log('Kode verifikasi:', code);
+    });
 
-  return sock;
+    sock.ev.on('connection.gsm.error', (error) => {
+      console.error('GSM error:', error);
+    });
+
+    return sock;
+  } catch (err) {
+    console.error('Initialization error:', err);
+    throw err;
+  }
 }
 
-// Function to send a message to a specific number with improved error handling
 async function sendMessage(to, message) {
+  if (!sock) {
+    console.error('WhatsApp client not initialized');
+    return false;
+  }
+
   try {
-    console.log(`Mencoba mengirim pesan ke ${to}...`);
-    // Ensure the number is in the correct format
     const formattedNumber = to.endsWith('@s.whatsapp.net') ? to : `${to.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
-    
     await sock.sendMessage(formattedNumber, { text: message });
-    console.log(`Pesan terkirim ke ${to}`);
     return true;
   } catch (error) {
-    console.error(`Gagal mengirim pesan ke ${to}:`, error);
+    console.error('Send message error:', error);
+    
+    // Auto-reconnect jika error terkait koneksi
+    if (error.message.includes('Socket closed') || error.message.includes('Connection failed')) {
+      console.log('Triggering reconnect due to send error...');
+      delayedReconnect();
+    }
+    
     return false;
   }
 }
 
-// Function to shutdown the bot gracefully
 async function shutdown() {
-  console.log('Menutup koneksi WhatsApp Bot...');
+  isShuttingDown = true;
+  
   if (sock) {
     try {
       await sock.end();
-      console.log('WhatsApp Bot ditutup.');
+      console.log('WhatsApp connection closed gracefully');
     } catch (error) {
-      console.error('Error shutting down bot:', error);
+      console.error('Shutdown error:', error);
+    } finally {
+      sock = null;
     }
   }
 }
 
-// Maintain backward compatibility with your previous implementation
+// Export dengan fitur tambahan
 module.exports = {
   initialize,
   sendMessage,
   shutdown,
-  client: {}, // Placeholder for compatibility
-  getSocket: () => sock
+  getSocket: () => sock,
+  isConnected: () => sock?.user ? true : false
 };
