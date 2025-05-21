@@ -587,8 +587,7 @@ async function handleTicketCheck(sock, msg, ticketNumber) {
     else if (ticketData.status === 'PENDING_PROCESS' || ticketData.status === 'PROCESSED') {
         // Tambahkan pesan persetujuan Sekdep jika status_sekdep adalah 'approved'
       if (ticketData.approvalSekdep === 'APPROVED') {
-        statusMessage += '✅ *Status: Disetujui oleh Sekretaris Departemen*\n';
-        statusMessage += '⏳ *Sedang menunggu diproses oleh Bendahara*\n\n';
+        statusMessage += '✅ *Status: Disetujui oleh Sekretaris Departemen, dan menunggu diproses bedahara*\n';
       }
       // Tampilkan status dari bendahara jika sudah disetujui oleh Sekdep
       else if (ticketData.statusBendahara === 'NOT_PROCESSED') {
