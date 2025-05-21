@@ -585,8 +585,13 @@ async function handleTicketCheck(sock, msg, ticketNumber) {
       statusMessage += `Alasan: ${ticketData.reasonSekdep || 'Tidak ada alasan yang diberikan'}`;
     }
     else if (ticketData.status === 'PENDING_PROCESS' || ticketData.status === 'PROCESSED') {
+        // Tambahkan pesan persetujuan Sekdep jika status_sekdep adalah 'approved'
+      if (ticketData.approvalSekdep === 'APPROVED') {
+        statusMessage += '✅ *Status: Disetujui oleh Sekretaris Departemen*\n';
+        statusMessage += '⏳ *Sedang menunggu diproses oleh Bendahara*\n\n';
+      }
       // Tampilkan status dari bendahara jika sudah disetujui oleh Sekdep
-      if (ticketData.statusBendahara === 'NOT_PROCESSED') {
+      else if (ticketData.statusBendahara === 'NOT_PROCESSED') {
         statusMessage += '✅ *Status: Disetujui oleh Sekdep, namun belum diproses oleh Bendahara*';
       } 
       else if (ticketData.statusBendahara === 'IN_PROGRESS') {
